@@ -2,8 +2,8 @@ name: Run Stock Bot
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 毎時0分に実行
-  workflow_dispatch:     # 手動でも実行できるようにする
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -26,3 +26,4 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python main.py
