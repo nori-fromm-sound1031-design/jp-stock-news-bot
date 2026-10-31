@@ -29,7 +29,7 @@ RSS_FEEDS = [
 ]
 
 MAX_ARTICLES_PER_RUN = 10
-MIN_IMPORTANCE = 3
+MIN_IMPORTANCE = 2
 SEEN_FILE = "seen_articles.json"
 
 # ==============================
@@ -253,6 +253,19 @@ def main():
             print("  → 通知スキップ（条件未満）")
 
         time.sleep(1.2)
+# 朝7時に「動いています」通知を送る
+    now = datetime.now()
+    if now.hour == 7 and now.minute < 10:
+        if DISCORD_WEBHOOK_URL:
+            heartbeat = {
+                "username": "日本株ニュースBot",
+                "content": "✅ ボットは正常に動いています（朝7時確認）"
+            }
+            try:
+                requests.post(DISCORD_WEBHOOK_URL, json=heartbeat, timeout=10)
+                print("[OK] 朝7時の生存通知を送信しました")
+            except Exception as e:
+                print(f"[ERROR] 生存通知失敗: {e}")
 
     save_seen(seen)
     print(f"\n処理完了: {processed}件")
