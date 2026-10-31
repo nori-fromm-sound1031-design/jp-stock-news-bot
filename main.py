@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 日本株ニュース → AI評価 → Discord通知
+夜は保存、朝7時にまとめて通知
 """
 
 import os
@@ -31,19 +32,20 @@ RSS_FEEDS = [
 MAX_ARTICLES_PER_RUN = 10
 MIN_IMPORTANCE = 2
 SEEN_FILE = "seen_articles.json"
+PENDING_FILE = "pending_articles.json"
 
 # ==============================
 # ユーティリティ
 # ==============================
-def load_seen() -> set:
-    if os.path.exists(SEEN_FILE):
-        with open(SEEN_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
-    return set()
+def load_json(filename, default):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return default
 
-def save_seen(seen: set):
-    with open(SEEN_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(seen), f, ensure_ascii=False, indent=2)
+def save_json(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def article_id(entry) -> str:
     raw = entry.get("id") or entry.get("link") or entry.get("title", "")
@@ -124,7 +126,7 @@ SYSTEM_PROMPT = """あなたは日本株専門の超正確な証券アナリス�
   "reason_for_notify": "通知する/しない理由を簡潔に1文で"
 }
 
-- importanceが3以上、かつrelated_stocksに「高」が1つ以上ある場合のみ should_notify を true にする
+- importanceが2以上、かつrelated_stocksに「高」が1つ以上ある場合のみ should_notify を true にする
 - related_stocksは最大3銘柄まで。関連がなければ空の配列 [] にする
 - 証券コードに自信がない場合は、その銘柄を絶対に出さない
 """
@@ -206,6 +208,19 @@ def send_discord(article: Dict, analysis: Dict):
     except Exception as e:
         print(f"[ERROR] Discord送信失敗: {e}")
 
+def send_heartbeat():
+    if not DISCORD_WEBHOOK_URL:
+        return
+    payload = {
+        "username": "日本株ニュースBot",
+        "content": "✅ ボットは正常に動いています（朝7時確認）"
+    }
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        print("[OK] 朝7時の生存通知を送信しました")
+    except Exception as e:
+        print(f"[ERROR] 生存通知失敗: {e}")
+
 # ==============================
 # メイン処理
 # ==============================
@@ -220,7 +235,15 @@ def main():
         return
 
     client = OpenAI(api_key=OPENAI_API_KEY)
-    seen = load_seen()
+    seen = set(load_json(SEEN_FILE, []))
+    pending = load_json(PENDING_FILE, [])
+
+    now = datetime.now()
+    hour = now.hour
+    is_night = 22 <= hour or hour < 7
+    is_morning = hour == 7
+
+    print(f"現在時刻: {hour}時 → 夜モード: {is_night} / 朝モード: {is_morning}")
 
     print("\n[1] RSS取得中...")
     articles = fetch_recent_articles(RSS_FEEDS, max_items=MAX_ARTICLES_PER_RUN * 2)
@@ -229,12 +252,41 @@ def main():
     new_articles = [a for a in articles if a["id"] not in seen]
     print(f"未処理記事数: {len(new_articles)}")
 
-    if not new_articles:
-        print("新着なし。終了します。")
+    # 夜の時間帯：保存するだけ
+    if is_night:
+        for a in new_articles:
+            pending.append(a)
+            seen.add(a["id"])
+        save_json(PENDING_FILE, pending)
+        save_json(SEEN_FILE, list(seen))
+        print(f"夜モード: {len(new_articles)}件を保存しました（通知なし）")
+        return
+
+    # 朝7時：pending + 新着をまとめて処理
+    to_process = []
+    if is_morning:
+        to_process.extend(pending)
+        pending.clear()
+        print(f"朝モード: 保存分 {len(to_process)}件を処理します")
+
+    to_process.extend(new_articles)
+    # 重複除去
+    seen_ids = set()
+    unique = []
+    for a in to_process:
+        if a["id"] not in seen_ids:
+            seen_ids.add(a["id"])
+            unique.append(a)
+    to_process = unique[:MAX_ARTICLES_PER_RUN]
+
+    if not to_process:
+        print("処理する記事がありません。")
+        if is_morning:
+            send_heartbeat()
         return
 
     processed = 0
-    for article in new_articles[:MAX_ARTICLES_PER_RUN]:
+    for article in to_process:
         print(f"\n--- 処理中: {article['title'][:50]}...")
         analysis = analyze_article(client, article)
 
@@ -253,22 +305,14 @@ def main():
             print("  → 通知スキップ（条件未満）")
 
         time.sleep(1.2)
-# 朝7時に「動いています」通知を送る
-    now = datetime.now()
-    if now.hour == 7 and now.minute < 10:
-        if DISCORD_WEBHOOK_URL:
-            heartbeat = {
-                "username": "日本株ニュースBot",
-                "content": "✅ ボットは正常に動いています（朝7時確認）"
-            }
-            try:
-                requests.post(DISCORD_WEBHOOK_URL, json=heartbeat, timeout=10)
-                print("[OK] 朝7時の生存通知を送信しました")
-            except Exception as e:
-                print(f"[ERROR] 生存通知失敗: {e}")
 
-    save_seen(seen)
+    save_json(SEEN_FILE, list(seen))
+    save_json(PENDING_FILE, pending)
     print(f"\n処理完了: {processed}件")
+
+    if is_morning:
+        send_heartbeat()
+
     print("=" * 50)
 
 if __name__ == "__main__":
