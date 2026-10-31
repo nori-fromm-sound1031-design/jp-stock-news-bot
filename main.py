@@ -205,6 +205,24 @@ def send_discord(article: Dict, analysis: Dict):
         resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
         resp.raise_for_status()
         print(f"[OK] Discord通知送信: {article['title'][:40]}...")
+         # 反応感度用に記録を残す
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "title": article["title"],
+            "link": article["link"],
+            "importance": analysis.get("importance"),
+            "sentiment": analysis.get("sentiment"),
+            "stocks": analysis.get("related_stocks", [])
+        }
+        log_file = "news_log.json"
+        logs = []
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        logs.append(log_entry)
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(logs, f, ensure_ascii=False, indent=2)
+
     except Exception as e:
         print(f"[ERROR] Discord送信失敗: {e}")
 
