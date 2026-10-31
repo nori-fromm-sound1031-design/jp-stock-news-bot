@@ -8,7 +8,7 @@ import os
 import json
 import hashlib
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Dict, Optional
 
 import feedparser
@@ -238,7 +238,9 @@ def main():
     seen = set(load_json(SEEN_FILE, []))
     pending = load_json(PENDING_FILE, [])
 
-    now = datetime.now()
+    JST = timezone(timedelta(hours=9))
+now = datetime.now(JST)
+
     hour = now.hour
     is_night = 22 <= hour or hour < 7
     is_morning = hour == 7
