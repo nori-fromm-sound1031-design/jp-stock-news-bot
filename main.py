@@ -239,8 +239,7 @@ def main():
     pending = load_json(PENDING_FILE, [])
 
     JST = timezone(timedelta(hours=9))
-now = datetime.now(JST)
-
+    now = datetime.now(JST)
     hour = now.hour
     is_night = 22 <= hour or hour < 7
     is_morning = hour == 7
